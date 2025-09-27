@@ -19,16 +19,28 @@ def health():
 @app.post("/clover_webhook")
 def clover_webhook():
     """
-    Clover should POST here. We enqueue a trigger for the local agent to consume.
+    Clover POSTs here.
+    - If it's a verification PING, respond with the verificationCode.
+    - If it's a payment/order, enqueue a trigger for the local agent.
     """
     data = request.get_json(silent=True) or {}
+    print("Webhook received:", data)
+
+    # ✅ Handle Clover webhook verification
+    if data.get("type") == "PING" and "verificationCode" in data:
+        code = data["verificationCode"]
+        print(f"Responding to Clover verification with code: {code}")
+        return code, 200
+
+    # ✅ Handle Clover events
     etype = data.get("type")
-    # Common useful events: PAYMENT_CREATED (recommended), ORDER_CREATED
     if etype in ("PAYMENT_CREATED", "ORDER_CREATED"):
         with _lock:
             _queue.append({"at": datetime.utcnow().isoformat(), "type": etype})
+        print(f"Enqueued trigger for event: {etype}")
         return "", 200
-    # Accept but ignore unrelated events
+
+    # Ignore other event types
     return "", 200
 
 @app.post("/next-trigger")
@@ -56,6 +68,7 @@ def test_fire():
         return "", 403
     with _lock:
         _queue.append({"at": datetime.utcnow().isoformat(), "type": "TEST"})
+    print("Manual test trigger queued")
     return "queued", 200
 
 if __name__ == "__main__":
